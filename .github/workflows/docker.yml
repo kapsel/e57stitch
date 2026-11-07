@@ -18,7 +18,7 @@ jobs:
   image:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Tag matches the package version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -26,10 +26,10 @@ jobs:
           want=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' e57stitch/__init__.py)
           test "v$want" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, package $want"; exit 1; }
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -39,7 +39,7 @@ jobs:
             type=ref,event=pr
 
       - name: Build for testing
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -58,7 +58,7 @@ jobs:
 
       - name: Log in to GHCR
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -66,7 +66,7 @@ jobs:
 
       - name: Push
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
