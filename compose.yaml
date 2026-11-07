@@ -1,0 +1,21 @@
+# Run the web app in Docker:   docker compose up -d --build
+# then open http://localhost:9090 and add scans from /scans.
+#
+# The app has no login and can read and write any path inside the container,
+# so the port is published on localhost only. Change it only on a network
+# you trust.
+services:
+  e57stitch:
+    # use the released image, or delete this line to build from source
+    image: ghcr.io/kapsel/e57stitch:latest
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    environment:
+      E57STITCH_CACHE: /data/cache
+      E57STITCH_MANUAL_DB: /data/manual/manual_links.sqlite
+    volumes:
+      - ./scans:/scans          # your E57 files
+      - ./data:/data            # caches, projects, saved links
+    shm_size: 2gb

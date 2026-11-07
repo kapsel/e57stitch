@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>e57stitch — scan registration</title>
+<link rel="stylesheet" href="/static/style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='none' stroke='%234ecdc4' stroke-width='3'/><circle cx='16' cy='16' r='4' fill='%23ffd93d'/></svg>" />
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">
+    <span class="logo"></span>
+    <span>e57stitch</span>
+    <small>multi-scan registration</small>
+  </div>
+  <div class="project-bar">
+    <select id="project-select" title="Active project"></select>
+    <button id="btn-project-new" class="icon-btn" title="New project">+</button>
+    <button id="btn-project-rename" class="icon-btn" title="Rename project">✎</button>
+    <button id="btn-project-delete" class="icon-btn danger" title="Delete project">×</button>
+  </div>
+  <div class="toolbar">
+    <button id="btn-add" class="btn">Add scans…</button>
+    <button id="btn-load" class="btn" title="Read the added scans into memory. Needed again after changing the loading settings.">Load scans</button>
+    <span class="sep"></span>
+    <button id="btn-register" class="btn primary" disabled title="Place all scans: match every pair by floor plan, choose the links that agree across the building, then polish. Uses stored results from earlier runs when it can.">Register</button>
+    <label class="check keep" title="Delete the stored results for these scans and search everything again, as if they had never been matched. Also removes slow results from earlier keep-improving runs, including in other projects that use the same scans. Slow: a 23-scan building took about 15 minutes. Unticks itself once the run starts."><input type="checkbox" id="start-clean" /> start clean</label>
+    <span id="locked-pill" class="manual-only hidden" title="This project is locked as a benchmark reference: nothing can change its placement. Click to unlock.">🔒 locked</span>
+    <span id="manual-only" class="manual-only hidden" title="Automatic links are off for this project: only your manual placements are used. Press Register to turn automatic linking back on.">📌 manual only</span>
+    <label class="check keep" title="After the first result, keep trying the slower matchers on unlinked scans, scans held by only one link and unsure pairs. This can run for hours. Press Stop any time: progress is kept."><input type="checkbox" id="keep-improving" checked /> keep improving</label>
+    <span class="sep"></span>
+    <button id="btn-improve" class="btn" disabled title="Try the slower matchers now on whatever is still unlinked or unsure">Improve links</button>
+    <button id="btn-resolve" class="btn" disabled title="Choose the links again from the stored results, without searching. Quick.">Re-choose links</button>
+    <button id="btn-refine" class="btn" disabled title="Fine-tune every scan against all its linked neighbours at once. The links stay as they are, and the result is kept only if the measured fit improves.">Polish</button>
+    <select id="refine-voxel" class="tiny-select" title="Polish resolution: 1 cm is slower and gains about 1–2 mm at most">
+      <option value="0.02" selected>2 cm</option>
+      <option value="0.01">1 cm</option>
+    </select>
+    <span class="sep"></span>
+    <button id="btn-export" class="btn" disabled>Export…</button>
+    <button id="btn-mesh" class="btn" disabled title="Open the last exported mesh, or enter a path, to fly through it">Open mesh…</button>
+    <button id="btn-fly" class="btn" disabled title="Walk through the scans in first person (WASD, Q/E, Shift, Esc)">Fly through</button>
+    <span class="sep"></span>
+    <button id="btn-cleanup" class="btn" disabled title="Drag a box in the top or side view to remove those points from the preview and exports. Registration is not affected.">Remove points</button>
+    <button id="btn-clip" class="btn" disabled title="Keep only the points inside a box, for example to drop the ceiling for a clear top view. Applied to preview, export and mesh.">Clip box</button>
+  </div>
+  <div class="jobbar" id="jobbar">
+    <div class="jb-main">
+      <div class="jb-top"><span id="status-text">Ready</span><span id="jb-pct"></span></div>
+      <div class="progress"><i id="progress-fill"></i><i id="progress-stage"></i></div>
+      <div class="jb-detail" id="jb-detail"></div>
+    </div>
+    <div class="jb-pop hidden" id="jb-pop"></div>
+    <button id="btn-cancel" class="btn small danger hidden" title="Stop the running job (progress is saved)">Stop</button>
+  </div>
+</header>
+
+<div id="group-strip">
+  <span class="strip-label" title="Scans joined by links. One group means everything is connected.">Groups</span>
+  <div id="group-chips"></div>
+  <span id="strip-summary"></span>
+</div>
+
+<div id="fly-hint" class="hidden">WASD move · Q/E down/up · Shift fast · P points/mesh · Esc exit</div>
+
+<main id="layout">
+  <aside id="sidebar" class="panel">
+    <div class="panel-head">
+      <h2>Scans <span id="scan-count" class="pill">0</span></h2>
+      <div class="mini-actions">
+        <button id="btn-cut-two" class="link hidden" title="Select two or more scans (Cmd/Ctrl-click), then compare them in a cross-section">compare</button>
+        <button id="btn-restore" class="link" title="Open a saved session.json file">open file</button>
+        <button id="btn-snapshot" class="link" title="Save a copy of the current result that is never overwritten. Find it under Snapshots and earlier runs.">snapshot</button>
+        <button id="btn-backup" class="link" title="Go back to the previous autosave of this project">undo save</button>
+        <button id="btn-reset-links" class="link" title="Forget all links and positions; keep the scans loaded. A snapshot is saved first.">reset links</button>
+        <button id="btn-clear" class="link" title="Remove all scans, links and removed-point regions from this project">remove all</button>
+        <button id="btn-fit" class="link" title="Fit the scans in all views (F)">fit view</button>
+      </div>
+    </div>
+    <div id="scan-list" class="scroll">
+      <div class="empty" id="scan-empty">
+        No scans yet.<br /><span>Add E57 files or a folder.</span>
+      </div>
+    </div>
+
+    <div class="panel-head sub">
+      <h2>Links <span id="pair-count" class="pill">0</span></h2>
+      <div class="mini-actions">
+        <button id="btn-measure" class="link" title="Measure how far apart the surfaces are, in millimetres, for every link">measure mm</button>
+        <select id="pair-filter" class="tiny-select" title="Show">
+          <option value="all">all</option>
+          <option value="accepted">linked</option>
+          <option value="rejected">rejected by you</option>
+        </select>
+      </div>
+    </div>
+    <div id="pair-list" class="scroll pairs">
+      <div class="empty" id="pair-empty">
+        No links yet.<br /><span>Press Register to find them.</span>
+      </div>
+    </div>
+  </aside>
+
+  <section id="viewport-wrap">
+    <canvas id="view"></canvas>
+    <div class="view-label" id="label-top">TOP · XY</div>
+    <div class="view-label" id="label-side">SIDE · XZ</div>
+    <div class="view-label" id="label-3d">3D</div>
+    <div class="pane-divider v"></div>
+    <div class="pane-divider h"></div>
+    <div id="axis-hint-top" class="axis-hint">→ X &nbsp; ↑ Y</div>
+    <div id="axis-hint-side" class="axis-hint">→ X &nbsp; ↑ Z</div>
+    <div class="viewport-tools">
+      <div class="seg" id="color-mode">
+        <button data-mode="scan" class="on">scans</button>
+        <button data-mode="rgb">rgb</button>
+        <button data-mode="height">height</button>
+      </div>
+      <label class="check" title="Show detected flat surfaces and edges"><input type="checkbox" id="toggle-features" /> features</label>
+      <label class="check" title="Draw a line between the scanner positions of every linked pair of scans, to see how the scans are connected. Dims the scans while on."><input type="checkbox" id="toggle-scanner-links" /> scanner links</label>
+      <label class="check" title="Also show where the scans were before registering"><input type="checkbox" id="toggle-before" /> before</label>
+      <label class="check" title="Arrange the scans side by side for inspection instead of at their real positions"><input type="checkbox" id="toggle-grid" checked /> side by side</label>
+      <label class="check" title="Show only the largest group"><input type="checkbox" id="toggle-main" /> main group only</label>
+      <label class="slider" title="Distance between scans in the side-by-side view">spread <input type="range" id="spread" min="0" max="2" step="0.01" value="0" /></label>
+    </div>
+    <div id="assist-panel" class="hidden"></div>
+    <div id="pano" class="hidden">
+      <div class="pano-head">
+        <div class="pano-title"><b>Match points</b> <span id="pano-sub" class="muted"></span></div>
+        <div id="pano-help" class="pano-help"></div>
+        <div class="pano-actions">
+          <button class="btn small" id="pano-undo" title="Remove the last marker (Backspace)">Undo marker</button>
+          <button class="btn" id="pano-cancel" title="Esc">Cancel</button>
+          <button class="btn primary" id="pano-use" disabled>Use these points ⏎</button>
+        </div>
+      </div>
+      <div class="pano-body">
+        <div class="pano-views">
+          <div class="pano-view" data-side="t"><canvas></canvas><div class="pano-label"></div><div class="pano-loading">Building panorama…</div></div>
+          <div class="pano-view" data-side="m"><canvas></canvas><div class="pano-label"></div><div class="pano-loading">Building panorama…</div></div>
+        </div>
+        <div class="pano-list" id="pano-list"></div>
+      </div>
+    </div>
+    <div class="viewport-foot">
+      <span>drag to pan / orbit · scroll to zoom · double-click to fit</span>
+      <span id="view-stats"></span>
+    </div>
+    <div id="empty-state" class="empty-state">
+      <div class="ring"></div>
+      <h3>Add your scans</h3>
+      <p>Add E57 files and check them from above and from the side. Then press Register to place them.</p>
+      <button class="btn primary" id="btn-add-2">Add scans…</button>
+    </div>
+  </section>
+
+  <aside id="inspector" class="panel">
+    <div class="panel-head"><h2>Settings</h2></div>
+    <div class="scroll inspector-scroll">
+      <details class="sect" open>
+        <summary>Loading scans</summary>
+        <div class="sect-body">
+          <div class="field">
+            <label>Noise removal</label>
+            <select id="p-cleanup">
+              <option value="off">off</option>
+              <option value="light" selected>light: reflections and sparse specks</option>
+              <option value="strong">strong: also small fragments</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Preview points per scan</label>
+            <select id="p-preview">
+              <option value="60000">60k</option>
+              <option value="120000" selected>120k</option>
+              <option value="250000">250k</option>
+              <option value="500000">500k</option>
+            </select>
+            <div class="hint">Only changes what you see, not the result. Saved with this project, for everyone using it, and reloads its scans.</div>
+          </div>
+          <label class="check block"><input type="checkbox" id="p-pose" checked /> use positions stored in the E57 files</label>
+          <label class="check block"><input type="checkbox" id="p-features" checked /> detect flat surfaces and edges</label>
+        </div>
+      </details>
+
+      <details class="sect">
+        <summary>Advanced</summary>
+        <div class="sect-body">
+          <div class="field">
+            <label title="Lowest score a pair needs to count as a possible link">Minimum link score <output id="p-accept-out">0.15</output></label>
+            <input type="range" id="p-accept" min="0.05" max="0.6" step="0.01" value="0.15" />
+          </div>
+          <div class="field">
+            <label title="How many pairs are matched at the same time">Parallel workers <output id="p-workers-out">8</output></label>
+            <input type="range" id="p-workers" min="1" max="12" step="1" value="8" />
+          </div>
+          <div class="hint">The benchmarks use a score of 0.15. Changing it can change the result, and stored results are then not reused.</div>
+        </div>
+      </details>
+
+      <button id="btn-apply-params" class="btn wide">Apply settings</button>
+      <div id="reload-warning" class="warning hidden">Settings changed. Press <b>Load scans</b> to use them.</div>
+      <div class="hint" id="cache-status"></div>
+
+
+
+      <details class="sect" id="cleanup-sect">
+        <summary>Removed points</summary>
+        <div id="cleanup-list" class="cleanup-list"></div>
+        <div class="btn-row">
+          <button class="btn small" id="btn-cleanup-clear" title="Delete all regions so the points come back">delete all regions</button>
+        </div>
+        <div class="hint">Press <b>Remove points</b>, then drag a box in the top or side view. It applies to the selected scans, or to all scans if none are selected. The scan files are not changed: points are hidden in the preview and left out of exports.</div>
+      </details>
+
+      <details class="sect" id="clip-sect">
+        <summary>Clip box</summary>
+        <div class="sect-body">
+          <label class="check block"><input type="checkbox" id="clip-on" /> clip enabled</label>
+          <div class="field">
+            <label>Top (ceiling cut) <output id="clip-top-out">—</output></label>
+            <div class="row"><input type="range" id="clip-top" min="-5" max="5" step="0.01" value="2" /></div>
+          </div>
+          <div class="field">
+            <label>Bottom (floor cut) <output id="clip-bottom-out">—</output></label>
+            <div class="row"><input type="range" id="clip-bottom" min="-5" max="5" step="0.01" value="-5" /></div>
+          </div>
+          <div class="field two">
+            <div><label>X min / max (m)</label>
+              <div class="row"><input type="number" id="clip-xmin" step="0.1" placeholder="∞" class="clip-num" /><input type="number" id="clip-xmax" step="0.1" placeholder="∞" class="clip-num" /></div></div>
+            <div><label>Y min / max (m)</label>
+              <div class="row"><input type="number" id="clip-ymin" step="0.1" placeholder="∞" class="clip-num" /><input type="number" id="clip-ymax" step="0.1" placeholder="∞" class="clip-num" /></div></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn small" id="clip-detect" title="Find the ceiling height from the visible scans and cut just below it">detect ceiling</button>
+            <button class="btn small" id="clip-fit-xy" title="Set X/Y limits to the visible scans">fit X/Y</button>
+            <button class="btn small" id="clip-clear-xy" title="Remove the X/Y limits (unbounded)">clear X/Y</button>
+            <button class="btn small danger" id="clip-remove" title="Delete the clip box">remove</button>
+          </div>
+          <div class="hint" id="clip-hint">Keeps only the points inside the box. The scan files are not changed: points are hidden in the preview and left out of point and mesh exports. Registration is not affected. Empty X/Y means no limit.</div>
+        </div>
+      </details>
+
+      <details class="sect">
+        <summary>Gravity check</summary>
+        <div id="gravity-list" class="gravity-list"></div>
+        <div class="hint">A scan whose tilt is uncertain can be matched at any angle. Set a scan to <b>level</b> if it stood on a flat surface, or <b>free</b> to stop assuming which way is up.</div>
+      </details>
+
+      <details class="sect">
+        <summary>Snapshots and earlier runs</summary>
+        <div class="hint" style="margin-top:6px">Snapshots</div>
+        <div id="snapshots-list" class="runs-list"></div>
+        <div class="hint" style="margin-top:6px">Earlier runs</div>
+        <div id="runs-list" class="runs-list"></div>
+        <div class="hint">Saved copies that are never overwritten. Restoring one replaces the links and positions in the current project.</div>
+      </details>
+
+      <div class="panel-head sub"><h2>Selection</h2></div>
+      <div id="selection">
+        <div class="empty small">Click a scan to inspect it.</div>
+      </div>
+
+      <details class="sect">
+        <summary>Legend</summary>
+        <div class="legend">
+          <div class="legend-row"><span class="swatch" style="background:#ff6b6b"></span> scan colour (one per scan)</div>
+          <div class="legend-row"><span class="swatch" style="background:#ff4fd8"></span> edge feature</div>
+          <div class="legend-row"><span class="swatch" style="background:#ffd93d"></span> flat surface</div>
+          <div class="legend-row"><span class="swatch" style="background:#4ecdc4"></span> group colour</div>
+        </div>
+      </details>
+    </div>
+  </aside>
+</main>
+
+<!-- file browser -->
+<div class="modal-backdrop hidden" id="modal-files">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Add E57 scans</h3>
+      <button class="close" data-close>×</button>
+    </div>
+    <div class="modal-body">
+      <div class="pathbar">
+        <button id="browse-up" class="btn small">↑</button>
+        <input id="browse-path" type="text" spellcheck="false" />
+        <button id="browse-go" class="btn small">Go</button>
+      </div>
+      <div class="hint">Select files below, or type a folder path above. Paths are read directly from disk.</div>
+      <div id="browse-list" class="browse-list scroll"></div>
+    </div>
+    <div class="modal-foot">
+      <span id="browse-summary" class="muted">0 selected</span>
+      <div class="right">
+        <label class="check" style="margin-right:8px"><input type="checkbox" id="browse-force" /> allow duplicates</label>
+        <button class="btn" data-close>Cancel</button>
+        <button class="btn" id="browse-add-all">Add whole folder</button>
+        <button class="btn primary" id="browse-add" disabled>Add selected</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- link cut-through inspector -->
+<div class="modal-backdrop hidden" id="modal-link">
+  <div class="modal wide">
+    <div class="modal-head">
+      <h3 id="link-title">Check link</h3>
+      <button class="close" data-close>×</button>
+    </div>
+    <div class="modal-body link-body">
+      <div class="link-canvas-wrap">
+        <canvas id="link-canvas"></canvas>
+        <div class="view-label" style="top:8px;left:8px">TOP · XY</div>
+        <div class="view-label" style="top:8px;left:50%">SIDE · XZ</div>
+        <div class="link-hint">drag to pan · scroll to zoom · double-click to fit</div>
+      </div>
+      <div class="link-side">
+        <div id="link-stats" class="link-stats"></div>
+        <div class="field">
+          <label>Cut axis</label>
+          <div class="seg" id="link-axis">
+            <button data-axis="x">X</button>
+            <button data-axis="y" class="on">Y</button>
+            <button data-axis="z">Z</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Cut position <output id="link-pos-out">50%</output></label>
+          <input type="range" id="link-pos" min="0" max="1000" value="500" />
+        </div>
+        <div class="field">
+          <label>Slab thickness <output id="link-thick-out">20 cm</output></label>
+          <input type="range" id="link-thick" min="2" max="300" value="20" />
+        </div>
+        <div class="btn-row">
+          <button class="btn small" id="link-scrub">▶ scrub</button>
+          <button class="btn small" id="link-slice">slice 2 cm</button>
+          <button class="btn small" id="link-mark" title="Remove the points in this slab from the preview and exports">remove slab…</button>
+        </div>
+        <div class="field">
+          <label>Scrub speed</label>
+          <input type="range" id="link-speed" min="1" max="60" value="10" />
+        </div>
+        <label class="check block"><input type="checkbox" id="link-features" checked /> matched edges</label>
+        <label class="check block"><input type="checkbox" id="link-lines" checked /> match lines</label>
+        <div class="btn-row">
+          <button class="btn small" id="link-fit">Fit</button>
+          <button class="btn small" id="link-recompute">Recompute</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn small primary hidden" id="link-register">Register this pair</button>
+          <button class="btn small danger" id="link-reject">Reject link</button>
+        </div>
+        <div id="link-feature-list" class="link-feature-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- export -->
+<div class="modal-backdrop hidden" id="modal-export">
+  <div class="modal narrow">
+    <div class="modal-head">
+      <h3>Export registered cloud</h3>
+      <button class="close" data-close>×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field two">
+        <div>
+          <label>Format</label>
+          <select id="ex-format">
+            <option value="e57">E57 (single or multi scan)</option>
+            <option value="ply">PLY (binary)</option>
+            <option value="pts">PTS (text)</option>
+            <option value="xyz">XYZ (text)</option>
+            <option value="mesh-ply">Mesh · PLY (triangulated, RGB + intensity)</option>
+            <option value="mesh-obj">Mesh · OBJ (RGB)</option>
+            <option value="mesh-glb">Mesh · GLB (RGB, fly-through)</option>
+          </select>
+        </div>
+        <div>
+          <label>Contents</label>
+          <select id="ex-mode">
+            <option value="merged">merged into one scan</option>
+            <option value="separate">keep scans separate</option>
+          </select>
+        </div>
+      </div>
+      <div class="field two">
+        <div>
+          <label>Scope</label>
+          <select id="ex-scope">
+            <option value="active">main connected group</option>
+            <option value="all">all groups (as separate scans)</option>
+            <option value="selected">checked scans only</option>
+          </select>
+        </div>
+        <div>
+          <label>Precision</label>
+          <select id="ex-precision">
+            <option value="double">double (accurate)</option>
+            <option value="single">single (smaller)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Point density</label>
+        <select id="ex-density">
+          <option value="full" selected>full resolution — every point</option>
+          <option value="adaptive">adaptive — cap over-dense areas only</option>
+          <option value="voxel">uniform downsample</option>
+        </select>
+        <div class="hint" id="ex-density-hint">Exports every valid point (minus filtered noise).</div>
+      </div>
+      <div class="field two hidden" id="ex-mesh-controls">
+        <div>
+          <label>Mesh method</label>
+          <select id="ex-mesh-method">
+            <option value="poisson" selected>Poisson · smooth, watertight</option>
+            <option value="bpa">Ball pivoting · more detail, holes</option>
+          </select>
+        </div>
+        <div>
+          <label>Poisson depth <output id="ex-mesh-depth-out">9</output></label>
+          <input type="range" id="ex-mesh-depth" min="6" max="12" step="1" value="9" />
+        </div>
+      </div>
+      <div class="field two hidden" id="ex-density-controls">
+        <div>
+          <label>Voxel <output id="ex-voxel-out">2 cm</output></label>
+          <input type="range" id="ex-voxel" min="0.005" max="0.1" step="0.005" value="0.02" />
+        </div>
+        <div>
+          <label>Max points / voxel</label>
+          <input type="number" id="ex-cap" min="1" max="20" value="3" />
+        </div>
+      </div>
+      <label class="check block"><input type="checkbox" id="ex-filter-noise" checked /> leave out noise found while loading</label>
+      <label class="check block"><input type="checkbox" id="ex-colors" checked /> include RGB colours</label>
+      <label class="check block"><input type="checkbox" id="ex-intensity" checked /> include intensity</label>
+      <div class="field">
+        <label>Output file</label>
+        <input type="text" id="ex-path" spellcheck="false" />
+      </div>
+      <div id="export-summary" class="hint"></div>
+    </div>
+    <div class="modal-foot">
+      <span id="export-status" class="muted"></span>
+      <div class="right">
+        <button class="btn" data-close>Cancel</button>
+        <button class="btn primary" id="export-run">Export</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script type="importmap">
+{ "imports": { "three": "/static/vendor/three.module.js" } }
+</script>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

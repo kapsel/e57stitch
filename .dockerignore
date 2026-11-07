@@ -1,0 +1,13 @@
+.venv
+.git
+scans
+scratch
+*.e57
+*.npy
+*.npz
+*.sqlite*
+**/__pycache__
+*.egg-info
+tests/bench/runs
+.pytest_cache
+data

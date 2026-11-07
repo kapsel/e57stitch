@@ -1,0 +1,35 @@
+[project]
+name = "e57stitch"
+dynamic = ["version"]
+description = "Register multiple E57 terrestrial scans into one aligned point cloud, with a top/side/3D preview."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Kasper Bræmer-Jensen" }]
+keywords = ["lidar", "e57", "point-cloud", "registration", "terrestrial-laser-scanning"]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "open3d>=0.18",
+    "pye57>=0.4.15",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "small_gicp>=1.0",
+    "pillow>=10",
+]
+
+[project.scripts]
+e57stitch = "e57stitch.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = { attr = "e57stitch.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["e57stitch*"]
+
+[tool.setuptools.package-data]
+e57stitch = ["web/*", "web/vendor/*"]

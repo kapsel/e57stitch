@@ -1,0 +1,29 @@
+.venv/
+__pycache__/
+*.pyc
+.cache/
+scratch/
+*.e57.part
+# large data: never in git
+scans/
+*.e57
+*.npy
+*.npz
+*.sqlite
+# build / OS noise
+*.egg-info/
+.DS_Store
+tests/bench/runs/
+.pytest_cache/
+.ruff_cache/
+# notes for AI coding assistants: local only
+CLAUDE.md
+CONTEXT.md
+STATE.md
+AGENTS.md
+GEMINI.md
+.claude/
+.cursor/
+.cursorrules
+.aider*
+data/

@@ -1,0 +1,77 @@
+# Build, test and publish the Docker image to GitHub Container Registry.
+#   pull request / push to main: build and test only
+#   tag vX.Y.Z:                  build, test, push ghcr.io/<owner>/<repo>:X.Y.Z, X.Y and latest
+name: docker
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          want=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' e57stitch/__init__.py)
+          test "v$want" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, package $want"; exit 1; }
+
+      - uses: docker/setup-buildx-action@v3
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=branch
+            type=ref,event=pr
+
+      - name: Build for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: e57stitch:test
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Unit tests and a health check
+        run: |
+          docker run --rm e57stitch:test python -m unittest discover tests
+          docker run -d --name smoke -p 127.0.0.1:9090:9090 e57stitch:test
+          for i in $(seq 30); do curl -fs http://127.0.0.1:9090/api/health && break; sleep 2; done
+          curl -fs http://127.0.0.1:9090/api/health
+          docker rm -f smoke
+
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha
