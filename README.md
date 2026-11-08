@@ -47,8 +47,9 @@ reported as separate *overlap groups* and kept out of the main solution.
   cross-section viewer with a movable slab, and a *scanner links* view of how
   the scans are connected.
 * **Fix it by hand:** accept, reject or permanently block a link, drag a scan
-  into place, or match points between two panoramas. Hand placements are
-  stored separately and always win.
+  into place, or match points between two panoramas
+  ([see below](#placing-a-scan-by-hand)). Hand placements are stored
+  separately and always win.
 * **Clean up:** remove-point boxes and a clip box (for example to drop the
   ceiling for a floor plan) that apply to preview, export and mesh.
 * **Export** merged or separate scans to E57, PLY, PTS or XYZ at full
@@ -289,6 +290,38 @@ Typical reasons: the scans are from another room/facade, or a shared corridor
 was not scanned. *Improve links* tries the slower matchers on them; if that
 does not help, place them by hand. *Minimum link score* under *Advanced* makes
 linking stricter or looser (the CLI equivalent is `--accept`).
+
+### Placing a scan by hand
+
+When a scan is unlinked or sits in the wrong spot, select it and press
+**Place manually…** (or **✋ place** on a group card). Only the scan you are
+placing and the group you are placing it into stay visible, in two contrasting
+colours, so you can see where the walls line up.
+
+**Drag it into place.** In the top view, drag the scan to roughly where it
+belongs and drag the orange ring to turn it. Being within half a metre and a
+few degrees is enough. **Snap** then fits it to the walls with ICP. It reports
+the surface error, the shared wall area and the overlap, and says plainly when
+the fit is poor. **Accept** saves the placement as a fixed link that later
+registration runs keep.
+
+![Drag into place: the scan is dragged next to its neighbours in the top view, Snap fits it to the walls (10 mm surface error) and Accept saves it](docs/images/place-by-hand.gif)
+
+**Match points.** Some scans can't be placed from geometry alone, for example
+a long, featureless corridor or a room that only shares a doorway. For these,
+**📍 Match points** opens the two scans as panoramas side by side. Click a
+sharp, recognisable spot in the top panorama, such as a door corner, a ceiling
+rosette or a statue, then the same spot in the bottom one. Each click snaps to
+the nearest measured surface. After two pairs the scan has a position, and a
+dashed circle shows where the next partner should be. Every pair gets a
+residual in centimetres, so a mis-click shows up straight away. **Use these
+points** places the scan from the markers and snaps it to the walls. The
+markers are saved with the placement.
+
+![Match points: four marker pairs (ceiling rosette, door frame, bust, cornice corner) clicked in both panoramas agree within 2 cm, then Snap fine-tunes the placement](docs/images/match-points.gif)
+
+People who were in the room while it was scanned are blurred in these
+recordings.
 
 ## How it works
 
